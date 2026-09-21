@@ -71,8 +71,38 @@ With mcp-lazy:
 
 The proxy exposes just 2 tools:
 
-- **mcp_search_tools** — Search available tools by keyword
-- **mcp_execute_tool** — Execute a tool (lazy-loads the server on first call)
+- **mcp_search_tools** — Search tools and return their live descriptions and `inputSchema`.
+- **mcp_execute_tool** — Validate nested arguments against the live schema, then execute once.
+
+### Target-tool arguments
+
+Only `server_name`, `tool_name` and `arguments` belong at the top level.
+All target-tool inputs must be inside `arguments`, including every property listed
+in `inputSchema.required`. Mentioning a destination in the message is not enough.
+
+```json
+{
+  "server_name": "llm-aether",
+  "tool_name": "ht_send_to_peer",
+  "arguments": {
+    "peer_id": "Destination title or ID",
+    "message": "Your message"
+  }
+}
+```
+
+Missing or misplaced inputs are rejected before the target tool is executed.
+Errors identify the required fields without echoing the submitted payload.
+No-argument tools still accept omitted `arguments`.
+
+The disk cache remains a search index, not the authority for input validation.
+Selected servers are loaded on demand; their catalogs are reread on a new
+connection and after 60 seconds. A failed refresh is reported rather than
+presenting the cached schema as current. The backend stays connected between
+calls. If its transport closes, the next call creates a new connection; an
+already attempted tool call is never automatically replayed.
+
+Existing proxy processes must reconnect to load an updated proxy executable.
 
 ![mcp-lazy Architecture](./architecture.png)
 

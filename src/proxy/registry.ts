@@ -11,6 +11,7 @@ export interface SearchResult {
   tool_name: string;
   server_name: string;
   description: string;
+  inputSchema: Record<string, unknown>;
   relevance_score: number;
 }
 
@@ -22,6 +23,11 @@ export class ToolRegistry {
   }
 
   addTools(entries: ToolEntry[]): void {
+    this.tools.push(...entries);
+  }
+
+  replaceServerTools(serverName: string, entries: ToolEntry[]): void {
+    this.tools = this.tools.filter((tool) => tool.server !== serverName);
     this.tools.push(...entries);
   }
 
@@ -105,6 +111,7 @@ export class ToolRegistry {
         tool_name: entry.name,
         server_name: entry.server,
         description: entry.description,
+        inputSchema: entry.inputSchema,
         relevance_score: Math.round(score * 100) / 100,
       }));
   }

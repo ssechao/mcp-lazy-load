@@ -21,9 +21,10 @@ export class ServerLoader {
   async getClient(serverName: string): Promise<Client> {
     // Return cached client
     const existing = this.servers.get(serverName);
-    if (existing) {
+    if (existing?.client.transport) {
       return existing.client;
     }
+    if (existing) this.servers.delete(serverName);
 
     // Deduplicate concurrent loads
     const pendingLoad = this.loading.get(serverName);
@@ -82,20 +83,29 @@ export class ServerLoader {
       env,
     });
 
-    const connectPromise = client.connect(transport);
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Server ${serverName} timed out after ${timeoutMs}ms`)), timeoutMs)
-    );
+    client.onclose = () => {
+      if (this.servers.get(serverName)?.client === client) {
+        this.servers.delete(serverName);
+      }
+    };
 
-    await Promise.race([connectPromise, timeoutPromise]);
-
-    this.servers.set(serverName, {
-      client,
-      transport: transport as unknown,
-      loadedAt: new Date(),
-    });
-
-    return client;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        client.connect(transport),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Server ${serverName} timed out after ${timeoutMs}ms`)), timeoutMs);
+        }),
+      ]);
+      if (!client.transport) throw new Error(`Server ${serverName} closed during initialization`);
+      this.servers.set(serverName, { client, transport, loadedAt: new Date() });
+      return client;
+    } catch (error) {
+      await client.close().catch(() => {});
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   getLoadedServers(): string[] {
@@ -109,8 +119,8 @@ export class ServerLoader {
   async closeServer(serverName: string): Promise<void> {
     const server = this.servers.get(serverName);
     if (server) {
-      await server.client.close();
       this.servers.delete(serverName);
+      await server.client.close();
     }
   }
 
